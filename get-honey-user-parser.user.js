@@ -1,365 +1,424 @@
 // ==UserScript==
 // @name         Get-Honey User Parser from LocalStorage
 // @namespace    https://github.com/bohdan-gen-tech
-// @version      2025.07.01.1
+// @version      2025.07.08.3
 // @description  Shows decoded user info from localStorage persist:user on get-honey domains
 // @author       Bohdan S.
 // @match        https://get-honey.ai/*
 // @match        https://get-honey.online/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=get-honey.ai
 // @grant        none
-// @updateURL    https://raw.githubusercontent.com/bohdan-gen-tech/get-honey-user-parser/main/get-honey-user-parser.user.js
-// @downloadURL  https://raw.githubusercontent.com/bohdan-gen-tech/get-honey-user-parser/main/get-honey-user-parser.user.js
+// @updateURL    https://raw.githubusercontent.com/bohdan-gen-tech/gethoney-user-parser/main/get-honey-user-parser.user.js
+// @downloadURL  https://raw.githubusercontent.com/bohdan-gen-tech/gethoney-user-parser/main/get-honey-user-parser.user.js
 // ==/UserScript==
 
 
 (function () {
   'use strict';
 
+  // --- CONFIGURATION ---
+  const config = {
+    storage: {
+      userKey: 'persist:user',
+      positionKey: 'userInfoPanelPosition',
+    },
+    api: {
+      loginUrl: '/Authenticate/login',
+      subscriptionUrl: '/Payments/admin-set-free-subscription',
+      credentials: {
+        email: "", // <------- ENTER EMAIL
+        password: "" // <------- ENTER PASS
+      },
+      productIds: {
+        'get-honey.ai': '1529fee5-e88b-49a9-af27-ee5f0520e2eb', //<---- Change prod product Id if it needs
+        'get-honey.online': 'c7d4f153-6a27-4d92-ab63-401c33c05c82', //<---- Change stage product Id if it needs
+      }
+    },
+    checkInterval: 1000,
+    domains: ['get-honey.ai', 'get-honey.online'],
+    selectors: {
+      container: '#userInfoPanel',
+      copyIdBtn: '[data-action="copy-id"]',
+      copyIdIcon: '[data-icon="copy-id"]',
+      activateBtn: '[data-action="activate-sub"]',
+      clearBtn: '[data-action="clear-data"]',
+      closeBtn: '[data-action="close"]',
+      dragHandle: '[data-handle="drag"]',
+    },
+  };
+
+  // --- STATE ---
   let lastPersistUser = null;
-  let currentContainer = null;
-  let loadingContainer = null;
+  let ui = {
+    container: null,
+    loader: null,
+  };
 
-  const checkInterval = 1000;
-  const STORAGE_POS_KEY = 'userInfoPanelPosition';
+  // --- DOM & UI ---
 
-  const startScript = () => {
-    const intervalId = setInterval(() => {
-      const raw = localStorage.getItem('persist:user');
+  /**
+   * Shows a simple loading indicator.
+   */
+  function showLoader() {
+    if (ui.container) {
+      ui.container.remove();
+      ui.container = null;
+    }
+    if (!ui.loader) {
+      ui.loader = document.createElement('div');
+      ui.loader.textContent = '⏳ Loading data...';
+      Object.assign(ui.loader.style, {
+        position: 'fixed', bottom: '20px', right: '20px', padding: '8px 12px',
+        background: 'rgba(0,0,0,0.5)', color: 'white', fontSize: '10px',
+        fontFamily: 'monospace', borderRadius: '9px', zIndex: 9999, backdropFilter: 'blur(4px)',
+      });
+      document.body.appendChild(ui.loader);
+    }
+  }
+
+  /**
+   * Removes the loading indicator.
+   */
+  function hideLoader() {
+    if (ui.loader) {
+      ui.loader.remove();
+      ui.loader = null;
+    }
+  }
+
+  /**
+   * Renders the main user info panel.
+   * @param {object} user - The user data object.
+   */
+  function renderPanel(user) {
+    hideLoader(); // <-- Сначала скрываем загрузчик
+    if (ui.container) ui.container.remove();
+
+    const {
+      id, email, utmSource, url, isTUser, userFeatures, nEnabled, activeSubscription
+    } = user;
+
+    let displayUrl = url;
+    if (url && url.length > 77) {
+      displayUrl = url.substring(0, 77) + '...';
+    }
+
+    const container = document.createElement('div');
+    container.id = config.selectors.container.substring(1);
+    Object.assign(container.style, {
+      position: 'fixed', bottom: '20px', right: '20px', width: '280px',
+      fontSize: '9px', background: 'rgba(0,0,0,0.5)', color: '#fff',
+      padding: '6px 8px 8px', zIndex: 9999, fontFamily: 'monospace',
+      backdropFilter: 'blur(4px)', borderRadius: '8px',
+    });
+
+    const featuresHTML = userFeatures ? `
+      <div style="margin: 10px 0 6px 0;">🔧 userFeatures:</div>
+      ${Object.entries(userFeatures).map(([key, value]) => `
+        <div style="color: ${value ? 'limegreen' : 'crimson'};">${key}: ${value}</div>
+      `).join('')}
+    ` : '';
+
+    const subscriptionHTML = activeSubscription ? `
+      <div style="margin-top: 8px">💳 Subscription:</div>
+      <div>priceID: ${activeSubscription.productId}</div>
+      <div>startDate: ${activeSubscription.startDate}</div>
+      <div>endDate: ${activeSubscription.endDate}</div>
+      <div>status: ${activeSubscription.status}</div>
+    ` : `
+      <div style="margin-top: 8px; user-select: none;">
+        <span>💳 subscription: </span>
+        <button data-action="activate-sub" title="Click to activate monthly subscription" style="cursor: pointer; background-color: #444; color: #0ff; border: none; border-radius: 4px; padding: 2px 6px; font-size: 9px; font-family: monospace;">
+          🫵 activate 1 month?
+        </button>
+      </div>
+    `;
+
+    container.innerHTML = `
+      <div data-handle="drag" style="cursor: move; font-weight: bold; margin-bottom: 8px; user-select: none; position: relative; background: black; padding: 2px 4px; border-radius: 1px;">
+        User Info Panel
+        <button data-action="close" title="Close" style="position: absolute; top: 0; right: 0; border: none; background: transparent; color: #fff; font-size: 14px; cursor: pointer; padding: 0 4px;">✖</button>
+      </div>
+      <div>🌐 utmSource: <b style="color: ${utmSource !== '-' ? 'white' : '#888'}">${utmSource}</b></div>
+
+      <div style="display: flex; align-items: baseline; line-height: 1.3;">
+        <span style="white-space: nowrap; flex-shrink: 0;">🔗 url:&nbsp;</span>
+        <b style="color: ${url !== '-' ? 'white' : '#888'}; word-break: break-all;">${displayUrl}</b>
+      </div>
+
+      <div>🧩 isTUser: <b style="color: ${isTUser === true ? 'limegreen' : isTUser === false ? 'crimson' : '#888'}">${isTUser}</b></div>
+      <div style="margin: 6px 0 2px;">📩 email: ${email}</div>
+      <div style="margin: 6px 0;">
+        <span data-icon="copy-id">🆔 user: </span>
+        <span data-action="copy-id" title="Click to copy user.id" style="color: #0ff; cursor: pointer; background-color: #444; padding: 2px 4px; border-radius: 4px; user-select: text;">
+          ${id}
+        </span>
+      </div>
+      ${subscriptionHTML}
+      ${featuresHTML}
+      ${user.hasOwnProperty('nEnabled') ? `<div style="margin-top: 8px; color: ${nEnabled ? 'limegreen' : 'crimson'};">🔞 nEnabled: ${nEnabled}</div>` : ''}
+      <button data-action="clear-data" style="margin-top: 10px; padding: 5px 10px; border-radius: 6px; border: none; background: #333; color: #fff; cursor: pointer; font-size: 9px; width: 100%;">
+        🧹 Clear site data
+      </button>
+    `;
+
+    document.body.appendChild(container);
+    ui.container = container;
+
+    makeDraggable(container);
+    attachEventListeners(container, user);
+    applySavedPosition(container);
+  }
+
+  /**
+   * Attaches event listeners to the panel's interactive elements.
+   * @param {HTMLElement} container - The panel's container element.
+   * @param {object} user - The user data object.
+   */
+  function attachEventListeners(container, user) {
+    container.addEventListener('click', (e) => {
+      const action = e.target.dataset.action;
+      if (!action) return;
+
+      const actions = {
+        'close': () => container.remove(),
+        'copy-id': () => handleCopy(e.target, user.id),
+        'clear-data': () => handleClearData(e.target),
+        'activate-sub': () => handleSubscriptionActivation(e.target, user.id),
+      };
+
+      actions[action]?.();
+    });
+  }
+
+  // --- LOGIC & HANDLERS ---
+
+  /**
+   * Handles copying text to the clipboard and provides visual feedback.
+   * @param {HTMLElement} target - The element that was clicked.
+   * @param {string} text - The text to copy.
+   */
+  async function handleCopy(target, text) {
+      const icon = ui.container.querySelector(config.selectors.copyIdIcon);
+      try {
+          await navigator.clipboard.writeText(text);
+          target.style.backgroundColor = 'limegreen';
+          icon.textContent = '✅ user: ';
+      } catch (err) {
+          target.style.backgroundColor = 'crimson';
+          icon.textContent = '❌ user: ';
+          console.error("Copy failed:", err);
+      } finally {
+          setTimeout(() => {
+              target.style.backgroundColor = '#444';
+              icon.textContent = '🆔 user: ';
+          }, 1000);
+      }
+  }
+
+  /**
+   * Handles the logic for clearing site data.
+   * @param {HTMLElement} button - The clear data button element.
+   */
+  function handleClearData(button) {
+    const origin = window.location.hostname;
+    if (!config.domains.some(d => origin.includes(d))) {
+        button.style.background = 'crimson';
+        button.textContent = '❌ Invalid domain!';
+        setTimeout(() => {
+            button.style.background = '#333';
+            button.textContent = '🧹 Clear site data';
+        }, 1500);
+        return;
+    }
+
+    try {
+        localStorage.clear();
+        sessionStorage.clear();
+        document.cookie.split(";").forEach(cookie => {
+            const eqPos = cookie.indexOf("=");
+            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+        });
+        button.style.background = 'limegreen';
+        button.textContent = '✅ Cleared!';
+    } catch (e) {
+        console.error('Error clearing site data:', e);
+        button.style.background = 'crimson';
+        button.textContent = '❌ Error!';
+    } finally {
+        setTimeout(() => window.location.reload(), 800);
+    }
+  }
+
+  /**
+   * Handles activating a free subscription via API calls.
+   * @param {HTMLElement} button - The activation button element.
+   * @param {string} userId - The ID of the user to activate the subscription for.
+   */
+  async function handleSubscriptionActivation(button, userId) {
+      button.disabled = true;
+      button.textContent = '⏳ Processing...';
+      button.style.backgroundColor = '#666';
+
+      try {
+          const domain = window.location.hostname.replace(/^www\./, '');
+          const apiBase = `https://api.${domain}/api`;
+          const productId = config.api.productIds[domain];
+
+          if (!productId) throw new Error('Unsupported domain for activation');
+
+          // 1. Login
+          const loginResp = await fetch(apiBase + config.api.loginUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(config.api.credentials),
+          });
+          if (!loginResp.ok) throw new Error(`admin login failed: ${loginResp.status}`);
+          const { accessToken } = await loginResp.json();
+          if (!accessToken) throw new Error('No accessToken received');
+
+          // 2. Activate
+          const activateResp = await fetch(apiBase + config.api.subscriptionUrl, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({ userId, productId }),
+          });
+          if (!activateResp.ok) throw new Error(`subscription failed: ${activateResp.status}`);
+
+          button.style.backgroundColor = 'limegreen';
+          button.style.color = 'black';
+          button.textContent = '🎉 Activated! Refresh page.';
+
+      } catch (err) {
+          button.style.backgroundColor = 'crimson';
+          button.style.color = 'white';
+          button.textContent = `🤦‍♂️ ${err.message}`;
+          console.error(err);
+          setTimeout(() => {
+              button.style.backgroundColor = '#444';
+              button.style.color = '#0ff';
+              button.textContent = 'activate 1 month?';
+              button.disabled = false;
+          }, 5000);
+      }
+  }
+
+  // --- DRAGGING & POSITIONING ---
+
+  /**
+   * Applies the saved position to the container.
+   * @param {HTMLElement} container - The element to position.
+   */
+  function applySavedPosition(container) {
+      const savedPos = localStorage.getItem(config.storage.positionKey);
+      if (savedPos) {
+          try {
+              const pos = JSON.parse(savedPos);
+              container.style.left = `${pos.left}px`;
+              container.style.top = `${pos.top}px`;
+              container.style.right = 'auto';
+              container.style.bottom = 'auto';
+          } catch {}
+      }
+  }
+
+  /**
+   * Makes an element draggable.
+   * @param {HTMLElement} container - The draggable container element.
+   */
+  function makeDraggable(container) {
+    const dragHandle = container.querySelector(config.selectors.dragHandle);
+    let isDragging = false;
+    let offsetX, offsetY;
+
+    const onMouseDown = (e) => {
+        isDragging = true;
+        offsetX = e.clientX - container.getBoundingClientRect().left;
+        offsetY = e.clientY - container.getBoundingClientRect().top;
+        container.style.transition = 'none';
+        e.preventDefault();
+    };
+
+    const onMouseMove = (e) => {
+        if (isDragging) {
+            container.style.left = `${e.clientX - offsetX}px`;
+            container.style.top = `${e.clientY - offsetY}px`;
+            container.style.right = 'auto';
+            container.style.bottom = 'auto';
+        }
+    };
+
+    const onMouseUp = () => {
+        if (isDragging) {
+            isDragging = false;
+            localStorage.setItem(config.storage.positionKey, JSON.stringify({
+                left: container.offsetLeft,
+                top: container.offsetTop,
+            }));
+        }
+    };
+
+    dragHandle.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  // --- INITIALIZATION ---
+
+  /**
+   * The main function that checks for user data and starts the process.
+   */
+  function main() {
+    setInterval(() => {
+      const raw = localStorage.getItem(config.storage.userKey);
       if (!raw || raw === lastPersistUser) return;
-
       lastPersistUser = raw;
-      showLoader();
 
       try {
         const outer = JSON.parse(raw);
         if (!outer.user || outer.user === 'null') return;
 
         const inner = JSON.parse(outer.user);
-        const userId = inner.id || null;
-        const email = inner.email || '-';
-        const utmSource = inner.utmSource || '-';
-        const url = inner.url || '-';
-        const isTUser = inner.hasOwnProperty('isTUser') ? inner.isTUser : null;
-        const features = inner.userFeatures || null;
-        const nEnabled = inner.nEnabled;
-        const activeSubscription = inner.activeSubscription || null;
+        const { id, isTUser } = inner;
 
-        if (userId && isTUser !== null) {
-          if (currentContainer) currentContainer.remove();
-          currentContainer = renderInfo(userId, email, utmSource, url, isTUser, features, nEnabled, activeSubscription, inner);
-          document.body.appendChild(currentContainer);
-
-          const savedPos = localStorage.getItem(STORAGE_POS_KEY);
-          if (savedPos) {
-            try {
-              const pos = JSON.parse(savedPos);
-              if (typeof pos.left === 'number' && typeof pos.top === 'number') {
-                currentContainer.style.left = pos.left + 'px';
-                currentContainer.style.top = pos.top + 'px';
-                currentContainer.style.right = 'auto';
-                currentContainer.style.bottom = 'auto';
-                currentContainer.style.position = 'fixed';
-              }
-            } catch {}
-          }
+        if (id && isTUser !== null) {
+          showLoader();
+          const user = {
+            id, isTUser,
+            email: inner.email || '-',
+            utmSource: inner.utmSource || '-',
+            url: inner.url || '-',
+            userFeatures: inner.userFeatures || null,
+            nEnabled: inner.nEnabled,
+            activeSubscription: inner.activeSubscription || null,
+          };
+          renderPanel(user);
         }
       } catch (err) {
         console.warn('❌ Error parsing persist:user:', err);
+        hideLoader();
       }
-    }, checkInterval);
-  };
-
-  function showLoader() {
-    if (currentContainer) {
-      currentContainer.remove();
-      currentContainer = null;
-    }
-    if (!loadingContainer) {
-      loadingContainer = document.createElement('div');
-      loadingContainer.textContent = '⏳ Loading data...';
-      Object.assign(loadingContainer.style, {
-        position: 'fixed',
-        bottom: '20px',
-        right: '20px',
-        padding: '8px 12px',
-        background: 'rgba(0,0,0,0.5)',
-        color: 'white',
-        fontSize: '10px',
-        fontFamily: 'monospace',
-        borderRadius: '9px',
-        zIndex: 9999,
-        backdropFilter: 'blur(4px)',
-      });
-      document.body.appendChild(loadingContainer);
-    }
+    }, config.checkInterval);
   }
 
-  function renderInfo(userId, email, utmSource, url, isTUser, features, nEnabled, activeSubscription, inner) {
-    if (loadingContainer) {
-      loadingContainer.remove();
-      loadingContainer = null;
-    }
-
-    const container = document.createElement('div');
-    Object.assign(container.style, {
-      position: 'fixed',
-      bottom: '20px',
-      right: '20px',
-      maxWidth: '270px',
-      fontSize: '9px',
-      background: 'rgba(0,0,0,0.5)',
-      color: '#fff',
-      padding: '6px 8px 8px',
-      zIndex: 9999,
-      fontFamily: 'monospace',
-      backdropFilter: 'blur(4px)',
-      borderRadius: '8px',
-    });
-    container.id = 'userFeaturesDraggable';
-
-    const dragHandle = document.createElement('div');
-    dragHandle.textContent = 'User Info Panel';
-    Object.assign(dragHandle.style, {
-      cursor: 'move',
-      fontWeight: 'bold',
-      marginBottom: '8px',
-      userSelect: 'none',
-      position: 'relative',
-    });
-    container.appendChild(dragHandle);
-
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '✖';
-    Object.assign(closeBtn.style, {
-      position: 'absolute',
-      top: '0',
-      right: '0',
-      border: 'none',
-      background: 'transparent',
-      color: '#fff',
-      fontSize: '14px',
-      cursor: 'pointer',
-      padding: '0 4px',
-      userSelect: 'none',
-    });
-    closeBtn.title = 'Close';
-    closeBtn.onclick = () => container.remove();
-    dragHandle.appendChild(closeBtn);
-
-    const infoBlock = document.createElement('div');
-    infoBlock.innerHTML = `
-      <div>🌐 utmSource: <b style="color: ${utmSource !== '-' ? 'white' : '#888'}">${utmSource}</b></div>
-      <div style="overflow: hidden;text-overflow: ellipsis;display: -webkit-box;-webkit-line-clamp: 2;-webkit-box-orient: vertical;white-space: normal;">
-        🔗 url: <b style="color: ${url !== '-' ? 'white' : '#888'}">${url}</b>
-      </div>
-      <div>🧩 isTUser: <b style="color: ${isTUser === true ? 'limegreen' : isTUser === false ? 'crimson' : '#888'}">${isTUser}</b></div>
-    `;
-    infoBlock.style.marginBottom = '10px';
-    container.appendChild(infoBlock);
-
-    const emailBlock = document.createElement('div');
-    emailBlock.textContent = `📩 email: ${email}`;
-    emailBlock.style.margin = '6px 0 2px';
-    container.appendChild(emailBlock);
-
-    const userIdBlock = document.createElement('div');
-    userIdBlock.style.margin = '6px 0';
-
-    const userIdContainer = document.createElement('div');
-    userIdContainer.style.marginTop = '2px';
-    userIdContainer.style.display = 'inline-block';
-
-    const userIdEmoji = document.createElement('span');
-    userIdEmoji.textContent = '🆔 user: ';
-    userIdEmoji.style.userSelect = 'none';
-
-    const userIdSpan = document.createElement('span');
-    userIdSpan.textContent = userId;
-    userIdSpan.style.color = '#0ff';
-    userIdSpan.style.cursor = 'pointer';
-    userIdSpan.style.backgroundColor = '#444';
-    userIdSpan.style.padding = '2px 4px';
-    userIdSpan.style.borderRadius = '4px';
-    userIdSpan.style.userSelect = 'text';
-    userIdSpan.title = 'Click to copy user.id';
-
-    userIdContainer.appendChild(userIdEmoji);
-    userIdContainer.appendChild(userIdSpan);
-    userIdBlock.appendChild(userIdContainer);
-    container.appendChild(userIdBlock);
-
-    userIdSpan.onclick = () => {
-      navigator.clipboard.writeText(userId)
-        .then(() => {
-          userIdSpan.style.color = 'white';
-          userIdSpan.style.backgroundColor = 'limegreen';
-          userIdEmoji.textContent = '✅ user: ';
-          setTimeout(() => {
-            userIdSpan.style.color = '#0ff';
-            userIdSpan.style.backgroundColor = '#444';
-            userIdEmoji.textContent = '🆔 user: ';
-          }, 1000);
-        })
-        .catch(() => {
-          userIdSpan.style.color = 'white';
-          userIdSpan.style.backgroundColor = 'crimson';
-          userIdEmoji.textContent = '❌ user: ';
-          setTimeout(() => {
-            userIdSpan.style.color = '#0ff';
-            userIdSpan.style.backgroundColor = '#444';
-            userIdEmoji.textContent = '🆔 user: ';
-          }, 1000);
-        });
-    };
-
-    if (features && typeof features === 'object') {
-      const title = document.createElement('div');
-      title.textContent = '🔧 userFeatures:';
-      title.style.margin = '10px 0 6px 0';
-      container.appendChild(title);
-
-      for (const [key, value] of Object.entries(features)) {
-        const line = document.createElement('div');
-        line.textContent = `${key}: ${value}`;
-        line.style.color = value === true ? 'limegreen' : value === false ? 'crimson' : 'white';
-        container.appendChild(line);
-      }
-    }
-
-    if (activeSubscription && typeof activeSubscription === 'object') {
-      const subBlock = document.createElement('div');
-      subBlock.innerHTML = `
-        <div style="margin-top: 8px">💳 Subscription:</div>
-        <div>priceID: ${activeSubscription.productId}</div>
-        <div>startDate: ${activeSubscription.startDate}</div>
-        <div>endDate: ${activeSubscription.endDate}</div>
-        <div>status: ${activeSubscription.status}</div>
-      `;
-      container.appendChild(subBlock);
-    }
-
-    // nEnabled
-    if (inner.hasOwnProperty('nEnabled')) {
-        const nEnabledBlock = document.createElement('div');
-        nEnabledBlock.textContent = `🔞 nEnabled: ${inner.nEnabled}`;
-        nEnabledBlock.style.marginTop = '8px';
-        nEnabledBlock.style.color = inner.nEnabled ? 'limegreen' : 'crimson';
-        container.appendChild(nEnabledBlock);
-    }
-
-// Кнопка очистки данных сайта
-    const clearButton = document.createElement('button');
-    clearButton.textContent = '🧹 Clear site data';
-    Object.assign(clearButton.style, {
-      marginTop: '10px',
-      padding: '5px 10px',
-      borderRadius: '6px',
-      border: 'none',
-      background: '#333',
-      color: '#fff',
-      cursor: 'pointer',
-      fontSize: '9px',
-      width: '100%',
-    });
-
-    clearButton.onclick = () => {
-      const origin = location.origin;
-      if (origin === 'https://get-honey.ai' || origin === 'https://get-honey.online') {
-        try {
-          localStorage.clear();
-          sessionStorage.clear();
-
-          // Удаление всех cookies
-            document.cookie.split(";").forEach(cookie => {
-                const eqPos = cookie.indexOf("=");
-                const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
-
-                // Удаляем куки с разных параметрами пути и домена
-                const domain = window.location.hostname.replace(/^www\./, '');
-                const pathVariants = ['/', window.location.pathname];
-
-                pathVariants.forEach(path => {
-                    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=${path}`;
-                    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=${path};domain=.${domain}`;
-                });
-            });
-
-
-          clearButton.style.background = 'limegreen';
-          clearButton.textContent = '✅ Deleted!';
-          setTimeout(() => {
-            clearButton.style.background = '#333';
-            clearButton.textContent = '🧹 Clear site data';
-          }, 1200);
-        } catch (e) {
-          console.warn('Error of clear data:', e);
-          clearButton.style.background = 'crimson';
-          clearButton.textContent = '❌ Error!';
-          setTimeout(() => {
-            clearButton.style.background = '#333';
-            clearButton.textContent = '🧹 Clear site data';
-          }, 1200);
-        }
-      } else {
-        clearButton.style.background = 'crimson';
-        clearButton.textContent = '❌ Не тот домен!';
-        setTimeout(() => {
-          clearButton.style.background = '#333';
-          clearButton.textContent = '🧹 Очистить сайт данные';
-        }, 1200);
-      }
-    };
-
-    container.appendChild(clearButton);
-
-    makeDraggable(container, dragHandle);
-    return container;
-  }
-
-  function makeDraggable(container, dragHandle) {
-    let isDragging = false;
-    let offsetX, offsetY;
-
-    dragHandle.addEventListener('mousedown', e => {
-      isDragging = true;
-      offsetX = e.clientX - container.getBoundingClientRect().left;
-      offsetY = e.clientY - container.getBoundingClientRect().top;
-      container.style.transition = 'none';
-      e.preventDefault();
-    });
-
-    document.addEventListener('mousemove', e => {
-      if (isDragging) {
-        container.style.left = `${e.clientX - offsetX}px`;
-        container.style.top = `${e.clientY - offsetY}px`;
-        container.style.right = 'auto';
-        container.style.bottom = 'auto';
-        container.style.position = 'fixed';
-      }
-    });
-
-    document.addEventListener('mouseup', () => {
-      if (isDragging) {
-        localStorage.setItem(STORAGE_POS_KEY, JSON.stringify({
-          left: parseFloat(currentContainer.style.left) || 20,
-          top: parseFloat(currentContainer.style.top) || (window.innerHeight - 100),
-        }));
-      }
-      isDragging = false;
-    });
-  }
-
-  showLoader();
-
-  const waitForFullLoad = () => {
-    const isFullyLoaded = document.readyState === 'complete' && performance.timing.loadEventEnd > 0;
-    if (isFullyLoaded) {
-      setTimeout(startScript, 1000);
+  /**
+   * Waits for the page to be fully loaded before running the script.
+   */
+  function waitForLoad() {
+    if (document.readyState === 'complete') {
+        setTimeout(main, 1500); // Small delay to ensure everything is settled
     } else {
-      requestAnimationFrame(waitForFullLoad);
+        window.addEventListener('load', () => setTimeout(main, 1500));
     }
-  };
+  }
 
-  waitForFullLoad();
+  // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+  // Сначала показываем загрузчик, а потом ждем загрузки страницы.
+  showLoader();
+  waitForLoad();
+
 })();
