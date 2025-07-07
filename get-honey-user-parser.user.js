@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Get-Honey User Parser from LocalStorage
 // @namespace    https://github.com/bohdan-gen-tech
-// @version      2025.07.08.3
+// @version      2025.07.08.4
 // @description  Shows decoded user info from localStorage persist:user on get-honey domains
 // @author       Bohdan S.
 // @match        https://get-honey.ai/*
@@ -120,13 +120,13 @@
     ` : '';
 
     const subscriptionHTML = activeSubscription ? `
-      <div style="margin-top: 8px">💳 Subscription:</div>
+      <div style="margin-top: 8px">💳 subscription:</div>
       <div>priceID: ${activeSubscription.productId}</div>
       <div>startDate: ${activeSubscription.startDate}</div>
       <div>endDate: ${activeSubscription.endDate}</div>
       <div>status: ${activeSubscription.status}</div>
     ` : `
-      <div style="margin-top: 8px; user-select: none;">
+      <div style="margin-top: 8px; user-select: text;">
         <span>💳 subscription: </span>
         <button data-action="activate-sub" title="Click to activate monthly subscription" style="cursor: pointer; background-color: #444; color: #0ff; border: none; border-radius: 4px; padding: 2px 6px; font-size: 9px; font-family: monospace;">
           🫵 activate 1 month?
@@ -301,7 +301,7 @@
           setTimeout(() => {
               button.style.backgroundColor = '#444';
               button.style.color = '#0ff';
-              button.textContent = 'activate 1 month?';
+              button.textContent = '🫵 activate 1 month?';
               button.disabled = false;
           }, 5000);
       }
