@@ -17,7 +17,3 @@ Tampermonkey userscript to display parsed user data from localStorage on get-hon
 1. Install [Tampermonkey extension](https://www.tampermonkey.net/).
 2. Enable [Developer mode](https://www.tampermonkey.net/faq.php?locale=en#Q209) to use userscripts.
 3. [Install](https://raw.githubusercontent.com/bohdan-gen-tech/gethoney-user-parser/main/get-honey-user-parser.user.js) "Get-Honey User Parser from LocalStorage" userscript
-
-## 🛠 Supported domains
-- https://get-honey.ai/*
-- https://get-honey.online/*
