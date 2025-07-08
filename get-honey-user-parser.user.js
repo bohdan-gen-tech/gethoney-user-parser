@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Get-Honey User Parser from LocalStorage
 // @namespace    https://github.com/bohdan-gen-tech
-// @version      2025.07.08.6
+// @version      2025.07.08.7
 // @description  Shows decoded user info from localStorage persist:user on get-honey domains
 // @author       Bohdan S.
 // @match        https://get-honey.ai/*
@@ -108,8 +108,8 @@
     Object.assign(container.style, {
       position: 'fixed', bottom: '20px', right: '20px', width: '280px',
       fontSize: '9px', background: 'rgba(0,0,0,0.5)', color: '#fff',
-      padding: '2px 2px 2px', zIndex: 9999, fontFamily: 'monospace',
-      backdropFilter: 'blur(4px)', borderRadius: '8px',
+      padding: '0px 0px 0px', zIndex: 9999, fontFamily: 'monospace',
+      backdropFilter: 'blur(4px)', borderRadius: '8px', overflow: 'hidden',
     });
 
     const featuresHTML = userFeatures ? `
