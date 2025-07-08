@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Get-Honey User Parser from LocalStorage
 // @namespace    https://github.com/bohdan-gen-tech
-// @version      2025.07.08.8
+// @version      2025.07.08.9
 // @description  Shows decoded user info from localStorage persist:user on get-honey domains
 // @author       Bohdan S.
 // @match        https://get-honey.ai/*
@@ -115,7 +115,7 @@
     const featuresHTML = userFeatures ? `
       <div style="margin: 10px 0 6px 0;">🔧 userFeatures:</div>
       ${Object.entries(userFeatures).map(([key, value]) => `
-        <div style="color: ${value ? 'limegreen' : 'crimson'};">${key}: ${value}</div>
+        <div style="color: ${value === true ? 'limegreen' : (value === false ? 'crimson' : 'white')};">${key}: ${value}</div>
       `).join('')}
     ` : '';
 
