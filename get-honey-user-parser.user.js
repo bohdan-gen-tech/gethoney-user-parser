@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Get-Honey User Parser from LocalStorage
 // @namespace    https://github.com/bohdan-gen-tech
-// @version      2025.07.08.7
+// @version      2025.07.08.8
 // @description  Shows decoded user info from localStorage persist:user on get-honey domains
 // @author       Bohdan S.
 // @match        https://get-honey.ai/*
@@ -108,8 +108,8 @@
     Object.assign(container.style, {
       position: 'fixed', bottom: '20px', right: '20px', width: '280px',
       fontSize: '9px', background: 'rgba(0,0,0,0.5)', color: '#fff',
-      padding: '0px 0px 0px', zIndex: 9999, fontFamily: 'monospace',
-      backdropFilter: 'blur(4px)', borderRadius: '8px', overflow: 'hidden',
+      padding: '3px 3px 3px', zIndex: 9999, fontFamily: 'monospace',
+      backdropFilter: 'blur(5px)', borderRadius: '8px', overflow: 'hidden',
     });
 
     const featuresHTML = userFeatures ? `
@@ -135,7 +135,7 @@
     `;
 
     container.innerHTML = `
-      <div data-handle="drag" style="cursor: move; font-weight: bold; margin-bottom: 8px; user-select: none; position: relative; background: black; padding: 2px 4px; border-radius: 1px;">
+      <div data-handle="drag" style="cursor: move; font-weight: bold; margin-bottom: 8px; margin-left: -2px; margin-right: -2px; margin-top: -2px; user-select: none; position: relative; background: black; padding: 4px 4px 3px; border-radius: 2px;">
         User Info Panel
         <button data-action="close" title="Close" style="position: absolute; top: 0; right: 0; border: none; background: transparent; color: #fff; font-size: 14px; cursor: pointer; padding: 0 4px;">✖</button>
       </div>
